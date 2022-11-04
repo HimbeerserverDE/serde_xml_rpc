@@ -99,6 +99,33 @@ pub fn request_to_string(name: &str, args: Vec<Value>) -> Result<String> {
     Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
 }
 
+pub fn request_to_str<T>(name: &str, args: Vec<T>) -> Result<String>
+where
+    T: serde::Serialize,
+{
+    let mut writer = Writer::new(Vec::new());
+
+    writer
+        .write(br#"<?xml version="1.0" encoding="utf-8"?>"#)
+        .map_err(error::EncodingError::from)?;
+
+    writer.write_start_tag(b"methodCall")?;
+    writer.write_tag(b"methodName", name)?;
+
+    writer.write_start_tag(b"params")?;
+
+    for value in args {
+        writer.write_start_tag(b"param")?;
+        value.serialize(ValueSerializer::new(&mut writer))?;
+        writer.write_end_tag(b"param")?;
+    }
+
+    writer.write_end_tag(b"params")?;
+    writer.write_end_tag(b"methodCall")?;
+
+    Ok(String::from_utf8(writer.into_inner()).map_err(error::EncodingError::from)?)
+}
+
 pub fn value_from_str(input: &str) -> Result<Value> {
     let mut reader = Reader::from_str(input);
     reader.expand_empty_elements(true);
