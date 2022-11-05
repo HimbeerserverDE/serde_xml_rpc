@@ -71,8 +71,14 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        serde::ser::SerializeMap::serialize_key(self, key)?;
-        serde::ser::SerializeMap::serialize_value(self, value)?;
+        let mut nil_check = Vec::new();
+        value.serialize(ValueSerializer::new(&mut Writer::new(&mut nil_check)))?;
+
+        if !nil_check.is_empty() {
+            serde::ser::SerializeMap::serialize_key(self, key)?;
+            serde::ser::SerializeMap::serialize_value(self, value)?;
+        }
+
         Ok(())
     }
 
@@ -92,8 +98,14 @@ where
     where
         T: ?Sized + serde::Serialize,
     {
-        serde::ser::SerializeMap::serialize_key(self, key)?;
-        serde::ser::SerializeMap::serialize_value(self, value)?;
+        let mut nil_check = Vec::new();
+        value.serialize(ValueSerializer::new(&mut Writer::new(&mut nil_check)))?;
+
+        if !nil_check.is_empty() {
+            serde::ser::SerializeMap::serialize_key(self, key)?;
+            serde::ser::SerializeMap::serialize_value(self, value)?;
+        }
+
         Ok(())
     }
 
