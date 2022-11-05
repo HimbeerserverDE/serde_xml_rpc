@@ -363,7 +363,7 @@ where
     }
 
     fn serialize_none(self) -> Result<Self::Ok> {
-        self.serialize_unit()
+        Ok(())
     }
 
     fn serialize_some<T>(self, v: &T) -> Result<Self::Ok>
