@@ -32,6 +32,9 @@ pub enum Error {
 
     #[error("serde encoding error: {0}")]
     EncodeError(String),
+
+    #[error("xml error: {0}")]
+    XmlError(#[from] quick_xml::Error),
 }
 
 impl serde::de::Error for Error {

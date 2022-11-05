@@ -1,6 +1,7 @@
 use base64::{decode as base64_decode, encode as base64_encode};
 use quick_xml::{events::Event, Reader, Writer};
 use serde::forward_to_deserialize_any;
+use std::cell::RefCell;
 use std::convert::TryInto;
 
 use crate::error::ParseError;
@@ -17,6 +18,7 @@ where
 {
     pub(crate) reader: Reader<B>,
     buf: Vec<u8>,
+    peek: RefCell<Option<Event<'static>>>,
 }
 
 impl<B> Deserializer<B>
@@ -30,6 +32,7 @@ where
         let mut ret = Deserializer {
             reader,
             buf: Vec::new(),
+            peek: RefCell::new(None),
         };
         ret.reader.expect_tag(b"value", &mut ret.buf)?;
         Ok(ret)
@@ -40,6 +43,25 @@ where
         B: std::io::BufRead,
     {
         self.reader
+    }
+
+    fn peek(&mut self) -> Result<Event<'static>> {
+        let mut peek = self.peek.borrow_mut();
+        if peek.is_none() {
+            *peek = Some(self.reader.read_event(&mut self.buf)?.into_owned());
+        }
+
+        match peek.as_ref() {
+            Some(v) => Ok(v.clone()),
+            None => unreachable!(),
+        }
+    }
+
+    fn read(&mut self) -> Result<Event<'static>> {
+        match self.peek.borrow_mut().take() {
+            Some(v) => Ok(v),
+            None => Ok(self.reader.read_event(&mut self.buf)?.into_owned()),
+        }
     }
 }
 
@@ -54,7 +76,7 @@ where
     where
         V: serde::de::Visitor<'de>,
     {
-        let ret = match self.reader.read_event(&mut self.buf) {
+        let ret = match self.read() {
             // If we got text, this is a String value. This is an edge case
             // because it's valid to have a string value without the inner
             // "string" tag.
@@ -181,7 +203,7 @@ where
                 .into())
             }
 
-            Err(e) => return Err(ParseError::from(e).into()),
+            Err(e) => return Err(e),
         };
 
         self.reader
@@ -191,10 +213,42 @@ where
         Ok(ret)
     }
 
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        let ret = match self.peek() {
+            Ok(Event::Text(_)) => visitor.visit_some(self)?,
+
+            Ok(Event::End(ref e)) if e.name() == b"value" => return visitor.visit_str(""),
+
+            Ok(Event::Start(ref e)) => match e.name() {
+                b"nil" => visitor.visit_none::<Self::Error>()?,
+                _ => visitor.visit_some(self)?,
+            },
+
+            Ok(Event::Eof) => return Err(ParseError::UnexpectedEOF(
+                "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                    .into(),
+            )
+            .into()),
+
+            Ok(_) => return Err(ParseError::UnexpectedEvent(
+                "one of int|i4|i8|boolean|string|double|dateTime.iso8601|base64|struct|array|nil"
+                    .into(),
+            )
+            .into()),
+
+            Err(e) => return Err(e),
+        };
+
+        Ok(ret)
+    }
+
     forward_to_deserialize_any!(
         bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes
         byte_buf unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any option
+        tuple_struct map struct enum identifier ignored_any
     );
 }
 
